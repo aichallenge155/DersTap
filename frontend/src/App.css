@@ -1,0 +1,287 @@
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
+
+/* Enhanced Custom Styles with Animations */
+
+/* Gradients */
+.gradient-bg {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #667eea 100%);
+  background-size: 200% 200%;
+  animation: gradientShift 6s ease infinite;
+}
+
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.glass-effect {
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(15px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+}
+
+/* Enhanced Buttons */
+.btn-primary {
+  @apply bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold py-3 px-8 rounded-xl transition-all duration-300 ease-in-out transform hover:scale-105 hover:shadow-xl;
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-primary::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+  transition: left 0.5s;
+}
+
+.btn-primary:hover::before {
+  left: 100%;
+}
+
+.btn-secondary {
+  @apply bg-gradient-to-r from-gray-200 to-gray-300 hover:from-gray-300 hover:to-gray-400 text-gray-800 font-semibold py-3 px-8 rounded-xl transition-all duration-300 ease-in-out transform hover:scale-105 hover:shadow-lg;
+}
+
+.input-field {
+  @apply w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-4 focus:ring-blue-500 focus:ring-opacity-30 focus:border-blue-500 outline-none transition-all duration-300 bg-white hover:border-gray-400;
+}
+
+/* Enhanced Cards */
+.teacher-card {
+  @apply bg-white rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-3 hover:scale-102 p-6 border border-gray-100 relative overflow-hidden;
+}
+
+.teacher-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 4px;
+  background: linear-gradient(90deg, #3B82F6, #8B5CF6, #3B82F6);
+  background-size: 200% 100%;
+  animation: cardGlow 3s ease infinite;
+}
+
+@keyframes cardGlow {
+  0%, 100% { background-position: 0% 0%; }
+  50% { background-position: 100% 0%; }
+}
+
+.rating-stars {
+  color: #fbbf24;
+  filter: drop-shadow(0 2px 4px rgba(251, 191, 36, 0.3));
+}
+
+.online-indicator {
+  @apply absolute top-3 right-3 w-4 h-4 bg-green-500 border-2 border-white rounded-full;
+  animation: pulse 2s infinite;
+}
+
+.offline-indicator {
+  @apply absolute top-3 right-3 w-4 h-4 bg-gray-400 border-2 border-white rounded-full;
+}
+
+/* New Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-50px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(50px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes bounceIn {
+  0% { opacity: 0; transform: scale(0.3); }
+  50% { opacity: 1; transform: scale(1.05); }
+  70% { transform: scale(0.9); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-20px); }
+}
+
+@keyframes floatDelayed {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-15px); }
+}
+
+@keyframes counterAnimation {
+  from { opacity: 0; transform: scale(0.5); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* Animation Classes */
+.animate-fade-in {
+  animation: fadeIn 1s ease-out;
+}
+
+.animate-fade-in-delay {
+  animation: fadeIn 1s ease-out 0.3s both;
+}
+
+.animate-slide-in-left {
+  animation: slideInLeft 1s ease-out;
+}
+
+.animate-slide-in-right {
+  animation: slideInRight 1s ease-out 0.2s both;
+}
+
+.animate-bounce-in {
+  animation: bounceIn 1s ease-out 0.5s both;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-float-delayed {
+  animation: floatDelayed 3s ease-in-out infinite 1.5s;
+}
+
+.counter-animation {
+  animation: counterAnimation 0.8s ease-out;
+}
+
+/* Hover Effects */
+.hover-glow:hover {
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
+  transform: translateY(-2px);
+}
+
+/* Mobile Responsive Animations */
+@media (max-width: 768px) {
+  .animate-slide-in-left,
+  .animate-slide-in-right {
+    animation: fadeIn 0.8s ease-out;
+  }
+  
+  .teacher-card:hover {
+    transform: translateY(-2px) scale(1.01);
+  }
+}
+
+/* Loading States */
+.loading-shimmer {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Enhanced Focus States */
+.input-field:focus {
+  transform: scale(1.02);
+}
+
+.btn-primary:focus,
+.btn-secondary:focus {
+  outline: none;
+  ring: 4px;
+  ring-color: rgba(59, 130, 246, 0.5);
+}
+
+/* Scroll Animations */
+.scroll-reveal {
+  opacity: 0;
+  transform: translateY(50px);
+  transition: all 0.6s ease;
+}
+
+.scroll-reveal.revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #3B82F6, #8B5CF6);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #2563EB, #7C3AED);
+}
+
+/* Enhanced Modal */
+.modal-overlay {
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(5px);
+  animation: fadeIn 0.3s ease;
+}
+
+.modal-content {
+  animation: bounceIn 0.5s ease;
+}
+
+/* Success States */
+.success-animation {
+  animation: successPulse 0.6s ease;
+}
+
+@keyframes successPulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.1); background-color: #10B981; }
+  100% { transform: scale(1); }
+}
+
+/* Error States */
+.error-shake {
+  animation: errorShake 0.5s ease;
+}
+
+@keyframes errorShake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+/* Utility Classes */
+.scale-102 {
+  transform: scale(1.02);
+}
+
+.perspective-1000 {
+  perspective: 1000px;
+}
+
+.rotate-y-12 {
+  transform: rotateY(12deg);
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .loading-shimmer {
+    background: linear-gradient(90deg, #2a2a2a 25%, #3a3a3a 50%, #2a2a2a 75%);
+  }
+}
