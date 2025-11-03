@@ -1,0 +1,103 @@
+// DərsTap - Prisma Schema
+// PostgreSQL (Neon) + Prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  // Enable connection pooling with Neon
+  directUrl = env("DIRECT_URL")
+}
+
+// User Model
+model User {
+  id           String    @id @default(uuid())
+  name         String
+  surname      String
+  email        String    @unique
+  password     String
+  role         Role
+  phone        String
+  city         String
+  isActive     Boolean   @default(true)
+  isOnline     Boolean   @default(false)
+  lastSeen     DateTime  @default(now())
+  profileViews Int       @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  
+  // Relations
+  teacher      Teacher?
+  reviews      Review[]
+  
+  @@index([email])
+  @@index([role])
+  @@index([city])
+}
+
+// Teacher Model
+model Teacher {
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  subjects         String[]
+  experience       Int
+  education        String
+  onlineRate       Float    @default(0)
+  offlineRate      Float    @default(0)
+  teachingMode     String[]
+  grade            String
+  bio              String?
+  profileImage     String?
+  availableHours   Json?
+  rating           Float    @default(0)
+  totalReviews     Int      @default(0)
+  isVerified       Boolean  @default(false)
+  isPremium        Boolean  @default(false)
+  profileViews     Int      @default(0)
+  completedLessons Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  
+  // Relations
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviews          Review[]
+  
+  @@index([userId])
+  @@index([rating])
+  @@index([isPremium])
+  @@index([isVerified])
+}
+
+// Review Model
+model Review {
+  id         String   @id @default(uuid())
+  teacherId  String
+  studentId  String
+  rating     Int
+  comment    String
+  subject    String
+  isApproved Boolean  @default(false)
+  lessonDate DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  
+  // Relations
+  teacher    Teacher  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  student    User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  
+  @@unique([teacherId, studentId])
+  @@index([teacherId])
+  @@index([studentId])
+  @@index([isApproved])
+}
+
+// Enums
+enum Role {
+  teacher
+  student
+  parent
+  admin
+}

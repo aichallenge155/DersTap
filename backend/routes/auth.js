@@ -1,7 +1,7 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
-const Teacher = require('../models/Teacher');
+const bcrypt = require('bcryptjs');
+const prisma = require('../lib/prisma');
 const { auth } = require('../middleware/auth');
 
 const router = express.Router();
@@ -12,43 +12,51 @@ router.post('/register', async (req, res) => {
     const { name, surname, email, password, role, phone, city, teacherData } = req.body;
 
     // İstifadəçi mövcudluğunu yoxla
-    const existingUser = await User.findOne({ email });
+    const existingUser = await prisma.user.findUnique({
+      where: { email }
+    });
+
     if (existingUser) {
       return res.status(400).json({ message: 'Bu email artıq qeydiyyatdan keçib' });
     }
 
-    // Yeni istifadəçi yarat
-    const user = new User({
-      name,
-      surname,
-      email,
-      password,
-      role,
-      phone,
-      city
-    });
+    // Şifrəni hashla
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
 
-    await user.save();
+    // Yeni istifadəçi yarat
+    const user = await prisma.user.create({
+      data: {
+        name,
+        surname,
+        email,
+        password: hashedPassword,
+        role,
+        phone,
+        city
+      }
+    });
 
     // Əgər müəllimdirsə, müəllim profili yarat
     if (role === 'teacher' && teacherData) {
-      const teacher = new Teacher({
-        userId: user._id,
-        subjects: teacherData.subjects,
-        experience: teacherData.experience,
-        education: teacherData.education,
-        teachingMode: teacherData.teachingMode,
-        onlineRate: teacherData.onlineRate || 0,
-        offlineRate: teacherData.offlineRate || 0,
-        grade: teacherData.grade,
-        bio: teacherData.bio || ''
+      await prisma.teacher.create({
+        data: {
+          userId: user.id,
+          subjects: teacherData.subjects,
+          experience: teacherData.experience,
+          education: teacherData.education,
+          teachingMode: teacherData.teachingMode,
+          onlineRate: teacherData.onlineRate || 0,
+          offlineRate: teacherData.offlineRate || 0,
+          grade: teacherData.grade,
+          bio: teacherData.bio || ''
+        }
       });
-      await teacher.save();
     }
 
     // JWT token yarat
     const token = jwt.sign(
-      { userId: user._id },
+      { userId: user.id },
       process.env.JWT_SECRET || 'derstap_secret_key',
       { expiresIn: '7d' }
     );
@@ -57,7 +65,7 @@ router.post('/register', async (req, res) => {
       message: 'Qeydiyyat uğurludur',
       token,
       user: {
-        id: user._id,
+        id: user.id,
         name: user.name,
         surname: user.surname,
         email: user.email,
@@ -76,25 +84,32 @@ router.post('/login', async (req, res) => {
     const { email, password } = req.body;
 
     // İstifadəçini tap
-    const user = await User.findOne({ email });
+    const user = await prisma.user.findUnique({
+      where: { email }
+    });
+
     if (!user) {
       return res.status(400).json({ message: 'Yanlış email və ya şifrə' });
     }
 
     // Şifrəni yoxla
-    const isMatch = await user.comparePassword(password);
+    const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(400).json({ message: 'Yanlış email və ya şifrə' });
     }
 
     // Online statusu yenilə
-    user.isOnline = true;
-    user.lastSeen = new Date();
-    await user.save();
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        isOnline: true,
+        lastSeen: new Date()
+      }
+    });
 
     // Token yarat
     const token = jwt.sign(
-      { userId: user._id },
+      { userId: user.id },
       process.env.JWT_SECRET || 'derstap_secret_key',
       { expiresIn: '7d' }
     );
@@ -103,7 +118,7 @@ router.post('/login', async (req, res) => {
       message: 'Giriş uğurludur',
       token,
       user: {
-        id: user._id,
+        id: user.id,
         name: user.name,
         surname: user.surname,
         email: user.email,
@@ -119,10 +134,13 @@ router.post('/login', async (req, res) => {
 // Çıxış
 router.post('/logout', auth, async (req, res) => {
   try {
-    const user = await User.findById(req.user._id);
-    user.isOnline = false;
-    user.lastSeen = new Date();
-    await user.save();
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: {
+        isOnline: false,
+        lastSeen: new Date()
+      }
+    });
 
     res.json({ message: 'Çıxış uğurludur' });
   } catch (error) {
@@ -134,7 +152,24 @@ router.post('/logout', auth, async (req, res) => {
 // İstifadəçi məlumatlarını al
 router.get('/me', auth, async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select('-password');
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: {
+        id: true,
+        name: true,
+        surname: true,
+        email: true,
+        role: true,
+        phone: true,
+        city: true,
+        isActive: true,
+        isOnline: true,
+        lastSeen: true,
+        profileViews: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
     res.json(user);
   } catch (error) {
     console.error(error);

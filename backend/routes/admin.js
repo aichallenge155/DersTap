@@ -1,7 +1,5 @@
 const express = require('express');
-const User = require('../models/User');
-const Teacher = require('../models/Teacher');
-const Review = require('../models/Review');
+const prisma = require('../lib/prisma');
 const { auth, adminAuth } = require('../middleware/auth');
 
 const router = express.Router();
@@ -9,12 +7,12 @@ const router = express.Router();
 // Admin paneli statistikaları
 router.get('/stats', auth, adminAuth, async (req, res) => {
   try {
-    const totalUsers = await User.countDocuments();
-    const totalTeachers = await Teacher.countDocuments();
-    const totalStudents = await User.countDocuments({ role: 'student' });
-    const totalParents = await User.countDocuments({ role: 'parent' });
-    const pendingReviews = await Review.countDocuments({ isApproved: false });
-    const totalReviews = await Review.countDocuments();
+    const totalUsers = await prisma.user.count();
+    const totalTeachers = await prisma.teacher.count();
+    const totalStudents = await prisma.user.count({ where: { role: 'student' } });
+    const totalParents = await prisma.user.count({ where: { role: 'parent' } });
+    const pendingReviews = await prisma.review.count({ where: { isApproved: false } });
+    const totalReviews = await prisma.review.count();
 
     res.json({
       totalUsers,
@@ -35,23 +33,39 @@ router.get('/users', auth, adminAuth, async (req, res) => {
   try {
     const { page = 1, limit = 10, role, search } = req.query;
     
-    let filter = {};
-    if (role) filter.role = role;
+    let where = {};
+    if (role) where.role = role;
     if (search) {
-      filter.$or = [
-        { name: new RegExp(search, 'i') },
-        { surname: new RegExp(search, 'i') },
-        { email: new RegExp(search, 'i') }
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { surname: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } }
       ];
     }
 
-    const users = await User.find(filter)
-      .select('-password')
-      .limit(limit * 1)
-      .skip((page - 1) * limit)
-      .sort({ createdAt: -1 });
+    const users = await prisma.user.findMany({
+      where,
+      select: {
+        id: true,
+        name: true,
+        surname: true,
+        email: true,
+        role: true,
+        phone: true,
+        city: true,
+        isActive: true,
+        isOnline: true,
+        lastSeen: true,
+        profileViews: true,
+        createdAt: true,
+        updatedAt: true
+      },
+      take: parseInt(limit),
+      skip: (parseInt(page) - 1) * parseInt(limit),
+      orderBy: { createdAt: 'desc' }
+    });
 
-    const total = await User.countDocuments(filter);
+    const total = await prisma.user.count({ where });
 
     res.json({
       users,
@@ -68,15 +82,25 @@ router.get('/users', auth, adminAuth, async (req, res) => {
 router.put('/users/:id/status', auth, adminAuth, async (req, res) => {
   try {
     const { isActive } = req.body;
-    const user = await User.findByIdAndUpdate(
-      req.params.id,
-      { isActive },
-      { new: true }
-    ).select('-password');
-
-    if (!user) {
-      return res.status(404).json({ message: 'İstifadəçi tapılmadı' });
-    }
+    const user = await prisma.user.update({
+      where: { id: req.params.id },
+      data: { isActive },
+      select: {
+        id: true,
+        name: true,
+        surname: true,
+        email: true,
+        role: true,
+        phone: true,
+        city: true,
+        isActive: true,
+        isOnline: true,
+        lastSeen: true,
+        profileViews: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
 
     res.json({ message: 'İstifadəçi statusu yeniləndi', user });
   } catch (error) {
@@ -90,16 +114,30 @@ router.get('/teachers', auth, adminAuth, async (req, res) => {
   try {
     const { page = 1, limit = 10, verified } = req.query;
     
-    let filter = {};
-    if (verified !== undefined) filter.isVerified = verified === 'true';
+    let where = {};
+    if (verified !== undefined) where.isVerified = verified === 'true';
 
-    const teachers = await Teacher.find(filter)
-      .populate('userId', 'name surname email city phone isActive')
-      .limit(limit * 1)
-      .skip((page - 1) * limit)
-      .sort({ createdAt: -1 });
+    const teachers = await prisma.teacher.findMany({
+      where,
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            surname: true,
+            email: true,
+            city: true,
+            phone: true,
+            isActive: true
+          }
+        }
+      },
+      take: parseInt(limit),
+      skip: (parseInt(page) - 1) * parseInt(limit),
+      orderBy: { createdAt: 'desc' }
+    });
 
-    const total = await Teacher.countDocuments(filter);
+    const total = await prisma.teacher.count({ where });
 
     res.json({
       teachers,
@@ -116,15 +154,20 @@ router.get('/teachers', auth, adminAuth, async (req, res) => {
 router.put('/teachers/:id/verify', auth, adminAuth, async (req, res) => {
   try {
     const { isVerified } = req.body;
-    const teacher = await Teacher.findByIdAndUpdate(
-      req.params.id,
-      { isVerified },
-      { new: true }
-    ).populate('userId', 'name surname email');
-
-    if (!teacher) {
-      return res.status(404).json({ message: 'Müəllim tapılmadı' });
-    }
+    const teacher = await prisma.teacher.update({
+      where: { id: req.params.id },
+      data: { isVerified },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            surname: true,
+            email: true
+          }
+        }
+      }
+    });
 
     res.json({ message: 'Müəllim statusu yeniləndi', teacher });
   } catch (error) {
@@ -138,20 +181,34 @@ router.get('/reviews/pending', auth, adminAuth, async (req, res) => {
   try {
     const { page = 1, limit = 10 } = req.query;
 
-    const reviews = await Review.find({ isApproved: false })
-      .populate('studentId', 'name surname')
-      .populate({
-        path: 'teacherId',
-        populate: {
-          path: 'userId',
-          select: 'name surname'
+    const reviews = await prisma.review.findMany({
+      where: { isApproved: false },
+      include: {
+        student: {
+          select: {
+            id: true,
+            name: true,
+            surname: true
+          }
+        },
+        teacher: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                surname: true
+              }
+            }
+          }
         }
-      })
-      .limit(limit * 1)
-      .skip((page - 1) * limit)
-      .sort({ createdAt: -1 });
+      },
+      take: parseInt(limit),
+      skip: (parseInt(page) - 1) * parseInt(limit),
+      orderBy: { createdAt: 'desc' }
+    });
 
-    const total = await Review.countDocuments({ isApproved: false });
+    const total = await prisma.review.count({ where: { isApproved: false } });
 
     res.json({
       reviews,
@@ -168,15 +225,10 @@ router.get('/reviews/pending', auth, adminAuth, async (req, res) => {
 router.put('/reviews/:id/approve', auth, adminAuth, async (req, res) => {
   try {
     const { isApproved } = req.body;
-    const review = await Review.findByIdAndUpdate(
-      req.params.id,
-      { isApproved },
-      { new: true }
-    );
-
-    if (!review) {
-      return res.status(404).json({ message: 'Rəy tapılmadı' });
-    }
+    const review = await prisma.review.update({
+      where: { id: req.params.id },
+      data: { isApproved }
+    });
 
     // Əgər təsdiq edililibsə, müəllimin reytinqini yenilə
     if (isApproved) {
@@ -193,19 +245,33 @@ router.put('/reviews/:id/approve', auth, adminAuth, async (req, res) => {
 // Müəllimin reytinqini yeniləmə funksiyası
 async function updateTeacherRating(teacherId) {
   try {
-    const reviews = await Review.find({ teacherId, isApproved: true });
-    const teacher = await Teacher.findById(teacherId);
+    const reviews = await prisma.review.findMany({
+      where: {
+        teacherId,
+        isApproved: true
+      }
+    });
 
     if (reviews.length > 0) {
       const totalRating = reviews.reduce((sum, review) => sum + review.rating, 0);
-      teacher.rating = (totalRating / reviews.length).toFixed(1);
-      teacher.totalReviews = reviews.length;
+      const avgRating = (totalRating / reviews.length).toFixed(1);
+      
+      await prisma.teacher.update({
+        where: { id: teacherId },
+        data: {
+          rating: parseFloat(avgRating),
+          totalReviews: reviews.length
+        }
+      });
     } else {
-      teacher.rating = 0;
-      teacher.totalReviews = 0;
+      await prisma.teacher.update({
+        where: { id: teacherId },
+        data: {
+          rating: 0,
+          totalReviews: 0
+        }
+      });
     }
-
-    await teacher.save();
   } catch (error) {
     console.error('Reytinq yenilənmə xətası:', error);
   }

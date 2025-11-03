@@ -1,30 +1,32 @@
-const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
-const User = require('./models/User');
-const Teacher = require('./models/Teacher');
-const Review = require('./models/Review');
+const prisma = require('./lib/prisma');
 
 const seedData = async () => {
   try {
     // Əvvəlcə bütün məlumatları sil
-    await User.deleteMany({});
-    await Teacher.deleteMany({});
-    await Review.deleteMany({});
+    await prisma.review.deleteMany({});
+    await prisma.teacher.deleteMany({});
+    await prisma.user.deleteMany({});
 
     console.log('Köhnə məlumatlar silindi...');
 
-    // Admin istifadəçi yarat (sadəcə admin qalsın)
-    const adminUser = new User({
-      name: 'Admin',
-      surname: 'DərsTap',
-      email: 'admin@derstap.az',
-      password: 'admin123456',
-      role: 'admin',
-      phone: '+994501234567',
-      city: 'Bakı',
-      isActive: true
+    // Şifrəni hashla
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash('admin123456', salt);
+
+    // Admin istifadəçi yarat
+    const adminUser = await prisma.user.create({
+      data: {
+        name: 'Admin',
+        surname: 'DərsTap',
+        email: 'admin@derstap.az',
+        password: hashedPassword,
+        role: 'admin',
+        phone: '+994501234567',
+        city: 'Bakı',
+        isActive: true
+      }
     });
-    await adminUser.save();
 
     console.log('\n=== Admin hesabı yaradıldı! ===');
     console.log('Email: admin@derstap.az');
@@ -33,6 +35,8 @@ const seedData = async () => {
 
   } catch (error) {
     console.error('❌ Seed data xətası:', error);
+  } finally {
+    await prisma.$disconnect();
   }
 };
 

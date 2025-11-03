@@ -1,6 +1,5 @@
 const express = require('express');
-const Review = require('../models/Review');
-const Teacher = require('../models/Teacher');
+const prisma = require('../lib/prisma');
 const { auth } = require('../middleware/auth');
 
 const router = express.Router();
@@ -16,15 +15,22 @@ router.post('/', auth, async (req, res) => {
     }
 
     // Müəllimin mövcudluğunu yoxla
-    const teacher = await Teacher.findById(teacherId);
+    const teacher = await prisma.teacher.findUnique({
+      where: { id: teacherId }
+    });
+
     if (!teacher) {
       return res.status(404).json({ message: 'Müəllim tapılmadı' });
     }
 
     // Əvvəlcə bu tələbənin bu müəllimə rəy verib-vermədiyini yoxla
-    const existingReview = await Review.findOne({
-      teacherId,
-      studentId: req.user._id
+    const existingReview = await prisma.review.findUnique({
+      where: {
+        teacherId_studentId: {
+          teacherId,
+          studentId: req.user.id
+        }
+      }
     });
 
     if (existingReview) {
@@ -32,16 +38,16 @@ router.post('/', auth, async (req, res) => {
     }
 
     // Yeni rəy yarat
-    const review = new Review({
-      teacherId,
-      studentId: req.user._id,
-      rating,
-      comment,
-      subject,
-      lessonDate
+    const review = await prisma.review.create({
+      data: {
+        teacherId,
+        studentId: req.user.id,
+        rating,
+        comment,
+        subject,
+        lessonDate: new Date(lessonDate)
+      }
     });
-
-    await review.save();
 
     // Müəllimin reytinqini yenilə
     await updateTeacherRating(teacherId);
@@ -56,12 +62,22 @@ router.post('/', auth, async (req, res) => {
 // Müəllimin rəylərini al
 router.get('/teacher/:teacherId', async (req, res) => {
   try {
-    const reviews = await Review.find({ 
-      teacherId: req.params.teacherId,
-      isApproved: true 
-    })
-      .populate('studentId', 'name surname')
-      .sort({ createdAt: -1 });
+    const reviews = await prisma.review.findMany({
+      where: {
+        teacherId: req.params.teacherId,
+        isApproved: true
+      },
+      include: {
+        student: {
+          select: {
+            id: true,
+            name: true,
+            surname: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
 
     res.json(reviews);
   } catch (error) {
@@ -73,29 +89,34 @@ router.get('/teacher/:teacherId', async (req, res) => {
 // Rəyi yenilə
 router.put('/:id', auth, async (req, res) => {
   try {
-    const review = await Review.findById(req.params.id);
+    const review = await prisma.review.findUnique({
+      where: { id: req.params.id }
+    });
     
     if (!review) {
       return res.status(404).json({ message: 'Rəy tapılmadı' });
     }
 
     // Yalnız rəyin müəllifi yeniləyə bilər
-    if (review.studentId.toString() !== req.user._id.toString()) {
+    if (review.studentId !== req.user.id) {
       return res.status(403).json({ message: 'Bu rəyi yeniləmək icazəniz yoxdur' });
     }
 
     const { rating, comment } = req.body;
     
-    review.rating = rating || review.rating;
-    review.comment = comment || review.comment;
-    review.isApproved = false; // Yenidən təsdiq gözləsin
-
-    await review.save();
+    const updatedReview = await prisma.review.update({
+      where: { id: req.params.id },
+      data: {
+        rating: rating || review.rating,
+        comment: comment || review.comment,
+        isApproved: false // Yenidən təsdiq gözləsin
+      }
+    });
 
     // Müəllimin reytinqini yenilə
     await updateTeacherRating(review.teacherId);
 
-    res.json({ message: 'Rəy uğurla yeniləndi', review });
+    res.json({ message: 'Rəy uğurla yeniləndi', review: updatedReview });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server xətası' });
@@ -105,19 +126,23 @@ router.put('/:id', auth, async (req, res) => {
 // Rəyi sil
 router.delete('/:id', auth, async (req, res) => {
   try {
-    const review = await Review.findById(req.params.id);
+    const review = await prisma.review.findUnique({
+      where: { id: req.params.id }
+    });
     
     if (!review) {
       return res.status(404).json({ message: 'Rəy tapılmadı' });
     }
 
     // Yalnız rəyin müəllifi və ya admin silə bilər
-    if (review.studentId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (review.studentId !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Bu rəyi silmək icazəniz yoxdur' });
     }
 
     const teacherId = review.teacherId;
-    await Review.findByIdAndDelete(req.params.id);
+    await prisma.review.delete({
+      where: { id: req.params.id }
+    });
 
     // Müəllimin reytinqini yenilə
     await updateTeacherRating(teacherId);
@@ -132,19 +157,33 @@ router.delete('/:id', auth, async (req, res) => {
 // Müəllimin reytinqini yeniləmə funksiyası
 async function updateTeacherRating(teacherId) {
   try {
-    const reviews = await Review.find({ teacherId, isApproved: true });
-    const teacher = await Teacher.findById(teacherId);
+    const reviews = await prisma.review.findMany({
+      where: {
+        teacherId,
+        isApproved: true
+      }
+    });
 
     if (reviews.length > 0) {
       const totalRating = reviews.reduce((sum, review) => sum + review.rating, 0);
-      teacher.rating = (totalRating / reviews.length).toFixed(1);
-      teacher.totalReviews = reviews.length;
+      const avgRating = (totalRating / reviews.length).toFixed(1);
+      
+      await prisma.teacher.update({
+        where: { id: teacherId },
+        data: {
+          rating: parseFloat(avgRating),
+          totalReviews: reviews.length
+        }
+      });
     } else {
-      teacher.rating = 0;
-      teacher.totalReviews = 0;
+      await prisma.teacher.update({
+        where: { id: teacherId },
+        data: {
+          rating: 0,
+          totalReviews: 0
+        }
+      });
     }
-
-    await teacher.save();
   } catch (error) {
     console.error('Reytinq yenilənmə xətası:', error);
   }

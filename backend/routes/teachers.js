@@ -1,6 +1,5 @@
 const express = require('express');
-const Teacher = require('../models/Teacher');
-const User = require('../models/User');
+const prisma = require('../lib/prisma');
 const { auth } = require('../middleware/auth');
 
 const router = express.Router();
@@ -10,45 +9,68 @@ router.get('/', async (req, res) => {
   try {
     const { city, subject, minPrice, maxPrice, minRating, grade } = req.query;
     
-    let filter = {};
-    let userFilter = {};
+    let where = {};
+    let userWhere = {};
 
-    if (city) userFilter.city = new RegExp(city, 'i');
-    if (subject) filter.subjects = new RegExp(subject, 'i');
+    if (city) userWhere.city = { contains: city, mode: 'insensitive' };
+    if (subject) where.subjects = { has: subject };
+    if (minRating) where.rating = { gte: parseFloat(minRating) };
+    if (grade) where.grade = { contains: grade, mode: 'insensitive' };
+
+    // Qiymət filtri
     if (minPrice || maxPrice) {
-      filter.$or = [];
+      const priceFilter = [];
       if (minPrice && maxPrice) {
-        filter.$or.push(
-          { onlineRate: { $gte: Number(minPrice), $lte: Number(maxPrice) } },
-          { offlineRate: { $gte: Number(minPrice), $lte: Number(maxPrice) } }
-        );
+        priceFilter.push({
+          OR: [
+            { onlineRate: { gte: parseFloat(minPrice), lte: parseFloat(maxPrice) } },
+            { offlineRate: { gte: parseFloat(minPrice), lte: parseFloat(maxPrice) } }
+          ]
+        });
       } else if (minPrice) {
-        filter.$or.push(
-          { onlineRate: { $gte: Number(minPrice) } },
-          { offlineRate: { $gte: Number(minPrice) } }
-        );
+        priceFilter.push({
+          OR: [
+            { onlineRate: { gte: parseFloat(minPrice) } },
+            { offlineRate: { gte: parseFloat(minPrice) } }
+          ]
+        });
       } else if (maxPrice) {
-        filter.$or.push(
-          { onlineRate: { $lte: Number(maxPrice) } },
-          { offlineRate: { $lte: Number(maxPrice) } }
-        );
+        priceFilter.push({
+          OR: [
+            { onlineRate: { lte: parseFloat(maxPrice) } },
+            { offlineRate: { lte: parseFloat(maxPrice) } }
+          ]
+        });
       }
+      where.AND = priceFilter;
     }
-    if (minRating) filter.rating = { $gte: Number(minRating) };
-    if (grade) filter.grade = new RegExp(grade, 'i');
 
-    const teachers = await Teacher.find(filter)
-      .populate({
-        path: 'userId',
-        match: userFilter,
-        select: 'name surname city phone isOnline lastSeen'
-      })
-      .sort({ isPremium: -1, rating: -1, createdAt: -1 });
+    const teachers = await prisma.teacher.findMany({
+      where: {
+        ...where,
+        user: userWhere
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            surname: true,
+            city: true,
+            phone: true,
+            isOnline: true,
+            lastSeen: true
+          }
+        }
+      },
+      orderBy: [
+        { isPremium: 'desc' },
+        { rating: 'desc' },
+        { createdAt: 'desc' }
+      ]
+    });
 
-    // Null olan userId-ləri filtrələ (şəhər filtri səbəbindən)
-    const filteredTeachers = teachers.filter(teacher => teacher.userId);
-
-    res.json(filteredTeachers);
+    res.json(teachers);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server xətası' });
@@ -58,16 +80,32 @@ router.get('/', async (req, res) => {
 // Müəyyən müəllimin profilini al
 router.get('/:id', async (req, res) => {
   try {
-    const teacher = await Teacher.findById(req.params.id)
-      .populate('userId', 'name surname city phone isOnline lastSeen');
+    const teacher = await prisma.teacher.findUnique({
+      where: { id: req.params.id },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            surname: true,
+            city: true,
+            phone: true,
+            isOnline: true,
+            lastSeen: true
+          }
+        }
+      }
+    });
 
     if (!teacher) {
       return res.status(404).json({ message: 'Müəllim tapılmadı' });
     }
 
     // Profil baxış sayını artır
-    teacher.profileViews += 1;
-    await teacher.save();
+    await prisma.teacher.update({
+      where: { id: req.params.id },
+      data: { profileViews: { increment: 1 } }
+    });
 
     res.json(teacher);
   } catch (error) {
@@ -83,7 +121,10 @@ router.put('/profile', auth, async (req, res) => {
       return res.status(403).json({ message: 'Yalnız müəllimlər profil yeniləyə bilər' });
     }
 
-    const teacher = await Teacher.findOne({ userId: req.user._id });
+    const teacher = await prisma.teacher.findUnique({
+      where: { userId: req.user.id }
+    });
+
     if (!teacher) {
       return res.status(404).json({ message: 'Müəllim profili tapılmadı' });
     }
@@ -100,21 +141,34 @@ router.put('/profile', auth, async (req, res) => {
       availableHours
     } = req.body;
 
-    // Yenilənəcək sahələri müəyyən et
-    if (subjects) teacher.subjects = subjects;
-    if (experience !== undefined) teacher.experience = experience;
-    if (education) teacher.education = education;
-    if (onlineRate !== undefined) teacher.onlineRate = onlineRate;
-    if (offlineRate !== undefined) teacher.offlineRate = offlineRate;
-    if (teachingMode) teacher.teachingMode = teachingMode;
-    if (grade) teacher.grade = grade;
-    if (bio !== undefined) teacher.bio = bio;
-    if (availableHours) teacher.availableHours = availableHours;
+    // Yenilənəcək məlumatları hazırla
+    const updateData = {};
+    if (subjects) updateData.subjects = subjects;
+    if (experience !== undefined) updateData.experience = experience;
+    if (education) updateData.education = education;
+    if (onlineRate !== undefined) updateData.onlineRate = onlineRate;
+    if (offlineRate !== undefined) updateData.offlineRate = offlineRate;
+    if (teachingMode) updateData.teachingMode = teachingMode;
+    if (grade) updateData.grade = grade;
+    if (bio !== undefined) updateData.bio = bio;
+    if (availableHours) updateData.availableHours = availableHours;
 
-    await teacher.save();
-
-    const updatedTeacher = await Teacher.findById(teacher._id)
-      .populate('userId', 'name surname city phone isOnline');
+    const updatedTeacher = await prisma.teacher.update({
+      where: { id: teacher.id },
+      data: updateData,
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            surname: true,
+            city: true,
+            phone: true,
+            isOnline: true
+          }
+        }
+      }
+    });
 
     res.json({
       message: 'Profil uğurla yeniləndi',
@@ -134,13 +188,10 @@ router.put('/:id/premium', auth, async (req, res) => {
       return res.status(403).json({ message: 'İcazə yoxdur' });
     }
 
-    const teacher = await Teacher.findById(req.params.id);
-    if (!teacher) {
-      return res.status(404).json({ message: 'Müəllim tapılmadı' });
-    }
-
-    teacher.isPremium = req.body.isPremium;
-    await teacher.save();
+    const teacher = await prisma.teacher.update({
+      where: { id: req.params.id },
+      data: { isPremium: req.body.isPremium }
+    });
 
     res.json({ message: 'Premium status yeniləndi', teacher });
   } catch (error) {
@@ -152,10 +203,25 @@ router.put('/:id/premium', auth, async (req, res) => {
 // Ən yaxşı müəllimlər (TOP siyahısı)
 router.get('/top/rated', async (req, res) => {
   try {
-    const topTeachers = await Teacher.find({ rating: { $gte: 4.0 } })
-      .populate('userId', 'name surname city isOnline')
-      .sort({ rating: -1, totalReviews: -1 })
-      .limit(10);
+    const topTeachers = await prisma.teacher.findMany({
+      where: { rating: { gte: 4.0 } },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            surname: true,
+            city: true,
+            isOnline: true
+          }
+        }
+      },
+      orderBy: [
+        { rating: 'desc' },
+        { totalReviews: 'desc' }
+      ],
+      take: 10
+    });
 
     res.json(topTeachers);
   } catch (error) {

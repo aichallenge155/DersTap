@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const prisma = require('../lib/prisma');
 
 // İstifadəçi autentifikasiyası
 const auth = async (req, res, next) => {
@@ -11,7 +11,24 @@ const auth = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'derstap_secret_key');
-    const user = await User.findById(decoded.userId).select('-password');
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      select: {
+        id: true,
+        name: true,
+        surname: true,
+        email: true,
+        role: true,
+        phone: true,
+        city: true,
+        isActive: true,
+        isOnline: true,
+        lastSeen: true,
+        profileViews: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
 
     if (!user) {
       return res.status(401).json({ message: 'Token etibarsızdır' });
